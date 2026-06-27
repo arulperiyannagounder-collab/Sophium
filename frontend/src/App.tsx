@@ -7,7 +7,7 @@ import { DashboardOverview } from './components/DashboardOverview';
 import { GoalTimeline } from './components/GoalTimeline';
 import { ChatInterface } from './components/ChatInterface';
 import { ObservabilityPanel } from './components/ObservabilityPanel';
-import { Sparkles, Loader, User, Lock, Mail, ChevronRight } from 'lucide-react';
+import { Sparkles, Loader, User, Lock, Mail, ChevronRight, Eye, EyeOff, Wallet, ShieldCheck, Goal, TrendingUp } from 'lucide-react';
 
 export default function App() {
   const { user, token, activePanel, setUser, setToken, setGoals, setTransactions, setInsights, setNotifications, addChatMessage } = useStore();
@@ -19,6 +19,13 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  
+  // Custom themed CFO auth form states
+  const [showPassword, setShowPassword] = useState(false);
+  const [monthlyIncome, setMonthlyIncome] = useState('');
+  const [riskTolerance, setRiskTolerance] = useState('Moderate');
+  const [preferredGoal, setPreferredGoal] = useState('House');
+  const [existingSavings, setExistingSavings] = useState('');
 
   // Restore session
   useEffect(() => {
@@ -83,23 +90,51 @@ export default function App() {
         const res = await api.post('/auth/login', formData);
         setToken(res.data.access_token);
         setUser(res.data.user);
-        
         addChatMessage({
           sender: 'cfo',
           text: `Welcome back, ${res.data.user.full_name}! Active session restored. Ready to proceed with financial evaluations.`
         });
       } else {
-        const res = await api.post(`/auth/signup?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}&full_name=${encodeURIComponent(fullName)}&monthly_income=85000`);
+        const incomeValue = Number(monthlyIncome) || 85000;
+        const res = await api.post(
+          `/auth/signup?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}&full_name=${encodeURIComponent(fullName)}&monthly_income=${incomeValue}&financial_risk_tolerance=${encodeURIComponent(riskTolerance)}`
+        );
         setToken(res.data.access_token);
         setUser(res.data.user);
 
+        // Add user's first custom goal if selected
+        if (preferredGoal) {
+          const targetMap = {
+            House: { name: "Buy 2BHK Flat", target: 2500000, date: "2031-12", cat: "house" },
+            Retirement: { name: "Retire Early", target: 15000000, date: "2053-06", cat: "retirement" },
+            General: { name: "General Savings Target", target: 500000, date: "2028-12", cat: "general" }
+          };
+          const selectedGoal = targetMap[preferredGoal as keyof typeof targetMap] || targetMap.General;
+          
+          try {
+            await api.post('/goals', {
+              name: selectedGoal.name,
+              target_amount: selectedGoal.target,
+              current_amount: Number(existingSavings) || 0,
+              target_date: selectedGoal.date,
+              category: selectedGoal.cat
+            });
+          } catch (goalErr) {
+            console.error("Failed to seed initial goal:", goalErr);
+          }
+        }
+
         // Add a mock transaction to avoid blank dashboard on fresh registration
-        await api.post('/transactions', {
-          amount: 25000,
-          category: 'rent',
-          description: 'Basic apartment rent',
-          is_recurring: true
-        });
+        try {
+          await api.post('/transactions', {
+            amount: Math.round(incomeValue * 0.25),
+            category: 'rent',
+            description: 'Basic apartment rent',
+            is_recurring: true
+          });
+        } catch (txErr) {
+          console.error("Failed to seed initial transaction:", txErr);
+        }
 
         // Fetch metrics
         const [goalsRes, txsRes, insightsRes] = await Promise.all([
@@ -184,53 +219,181 @@ export default function App() {
               </div>
             ) : (
               // Manual Auth forms
-              <form onSubmit={handleManualAuth} className="space-y-3 text-left">
-                {!isLogin && (
-                  <div>
-                    <label className="text-[10px] text-gray-400 block mb-1">Full Name</label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-2.5 h-3.5 w-3.5 text-gray-500" />
+              <form onSubmit={handleManualAuth} className="space-y-4 text-left">
+                {!isLogin ? (
+                  // Custom financial profile signup form matching the screenshot layout
+                  <div className="space-y-4 max-h-[360px] overflow-y-auto pr-1">
+                    {/* Account Details Section */}
+                    <div>
+                      <div className="text-[#0d9488] font-bold text-[10px] uppercase tracking-wider mb-2 border-b border-slate-800 pb-1">
+                        Account Details
+                      </div>
+                      
+                      <div className="space-y-3">
+                        {/* Full Name */}
+                        <div className="relative bg-[#f0fbf9] border border-[#dbf5f0] rounded-xl flex items-center px-4 py-2.5 transition-all focus-within:border-teal-400">
+                          <User className="h-4.5 w-4.5 text-[#0d9488] shrink-0 mr-3" />
+                          <input
+                            type="text"
+                            required
+                            value={fullName}
+                            onChange={(e) => setFullName(e.target.value)}
+                            placeholder="Full Name"
+                            className="w-full bg-transparent focus:outline-none text-[#0f766e] text-xs placeholder-[#0d9488]/40"
+                          />
+                        </div>
+
+                        {/* Email Address */}
+                        <div className="relative bg-[#f0fbf9] border border-[#dbf5f0] rounded-xl flex items-center px-4 py-2.5 transition-all focus-within:border-teal-400">
+                          <Mail className="h-4.5 w-4.5 text-[#0d9488] shrink-0 mr-3" />
+                          <input
+                            type="email"
+                            required
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="Email Address"
+                            className="w-full bg-transparent focus:outline-none text-[#0f766e] text-xs placeholder-[#0d9488]/40"
+                          />
+                        </div>
+
+                        {/* Password */}
+                        <div className="relative bg-[#f0fbf9] border border-[#dbf5f0] rounded-xl flex items-center px-4 py-2.5 transition-all focus-within:border-teal-400">
+                          <Lock className="h-4.5 w-4.5 text-[#0d9488] shrink-0 mr-3" />
+                          <input
+                            type={showPassword ? "text" : "password"}
+                            required
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="Password"
+                            className="w-full bg-transparent focus:outline-none text-[#0f766e] text-xs placeholder-[#0d9488]/40 pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-2.5 text-[#0d9488] hover:text-teal-700 cursor-pointer flex items-center"
+                          >
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Financial Profile Section */}
+                    <div>
+                      <div className="text-[#0d9488] font-bold text-[10px] uppercase tracking-wider mb-2 mt-2 border-b border-slate-800 pb-1">
+                        Financial Profile
+                      </div>
+
+                      <div className="space-y-3">
+                        {/* Monthly Income */}
+                        <div className="bg-[#f0fbf9] border border-[#dbf5f0] rounded-xl flex items-center px-4 py-2.5 transition-all focus-within:border-teal-400">
+                          <Wallet className="h-4.5 w-4.5 text-[#0d9488] shrink-0 mr-3" />
+                          <input
+                            type="number"
+                            required
+                            value={monthlyIncome}
+                            onChange={(e) => setMonthlyIncome(e.target.value)}
+                            placeholder="Monthly Income (INR)"
+                            className="w-full bg-transparent focus:outline-none text-[#0f766e] text-xs placeholder-[#0d9488]/40"
+                          />
+                        </div>
+
+                        {/* Risk Tolerance */}
+                        <div className="relative bg-[#f0fbf9] border border-[#dbf5f0] rounded-xl px-4 py-1 transition-all focus-within:border-teal-400 flex flex-col justify-center">
+                          <span className="text-[7px] text-[#0d9488] font-bold uppercase tracking-wider block leading-none mt-1">Financial Risk Tolerance</span>
+                          <div className="flex items-center relative py-0.5">
+                            <ShieldCheck className="h-4 w-4 text-[#0d9488] mr-2 shrink-0" />
+                            <select
+                              value={riskTolerance}
+                              onChange={(e) => setRiskTolerance(e.target.value)}
+                              className="w-full bg-transparent focus:outline-none text-[#0f766e] text-xs cursor-pointer border-none outline-none appearance-none pr-6"
+                            >
+                              <option value="Low">Low Risk</option>
+                              <option value="Moderate">Moderate Risk</option>
+                              <option value="High">High Risk</option>
+                            </select>
+                            <ChevronRight className="absolute right-1 top-1 h-3 w-3 text-[#0d9488] transform rotate-90 pointer-events-none" />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Primary Focus Section */}
+                    <div>
+                      <div className="text-[#0d9488] font-bold text-[10px] uppercase tracking-wider mb-2 mt-2 border-b border-slate-800 pb-1">
+                        Primary Focus
+                      </div>
+
+                      <div className="space-y-3">
+                        {/* Preferred Goal */}
+                        <div className="relative bg-[#f0fbf9] border border-[#dbf5f0] rounded-xl px-4 py-1 transition-all focus-within:border-teal-400 flex flex-col justify-center">
+                          <span className="text-[7px] text-[#0d9488] font-bold uppercase tracking-wider block leading-none mt-1">Target Savings Goal</span>
+                          <div className="flex items-center relative py-0.5">
+                            <Goal className="h-4 w-4 text-[#0d9488] mr-2 shrink-0" />
+                            <select
+                              value={preferredGoal}
+                              onChange={(e) => setPreferredGoal(e.target.value)}
+                              className="w-full bg-transparent focus:outline-none text-[#0f766e] text-xs cursor-pointer border-none outline-none appearance-none pr-6"
+                            >
+                              <option value="House">Buy 2BHK Flat</option>
+                              <option value="Retirement">Retire Early</option>
+                              <option value="General">General Savings Target</option>
+                            </select>
+                            <ChevronRight className="absolute right-1 top-1 h-3 w-3 text-[#0d9488] transform rotate-90 pointer-events-none" />
+                          </div>
+                        </div>
+
+                        {/* Existing Savings */}
+                        <div className="relative bg-[#f0fbf9] border border-[#dbf5f0] rounded-xl flex items-center px-4 py-2.5 transition-all focus-within:border-teal-400">
+                          <TrendingUp className="h-4.5 w-4.5 text-[#0d9488] shrink-0 mr-3" />
+                          <input
+                            type="number"
+                            value={existingSavings}
+                            onChange={(e) => setExistingSavings(e.target.value)}
+                            placeholder="Pre-Existing Savings (INR)"
+                            className="w-full bg-transparent focus:outline-none text-[#0f766e] text-xs placeholder-[#0d9488]/40"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  // Custom themed Login Form
+                  <div className="space-y-3">
+                    {/* Email Address */}
+                    <div className="relative bg-[#f0fbf9] border border-[#dbf5f0] rounded-xl flex items-center px-4 py-2.5 transition-all focus-within:border-teal-400">
+                      <Mail className="h-4.5 w-4.5 text-[#0d9488] shrink-0 mr-3" />
                       <input
-                        type="text"
+                        type="email"
                         required
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        placeholder="John Doe"
-                        className="w-full bg-slate-950 border border-slate-850 rounded px-9 py-2 text-xs focus:outline-none focus:border-blue-500 text-gray-200"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="Email Address"
+                        className="w-full bg-transparent focus:outline-none text-[#0f766e] text-xs placeholder-[#0d9488]/40"
                       />
+                    </div>
+
+                    {/* Password */}
+                    <div className="relative bg-[#f0fbf9] border border-[#dbf5f0] rounded-xl flex items-center px-4 py-2.5 transition-all focus-within:border-teal-400">
+                      <Lock className="h-4.5 w-4.5 text-[#0d9488] shrink-0 mr-3" />
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Password"
+                        className="w-full bg-transparent focus:outline-none text-[#0f766e] text-xs placeholder-[#0d9488]/40 pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-2.5 text-[#0d9488] hover:text-teal-700 cursor-pointer flex items-center"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
                     </div>
                   </div>
                 )}
-
-                <div>
-                  <label className="text-[10px] text-gray-400 block mb-1">Email Address</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-2.5 h-3.5 w-3.5 text-gray-500" />
-                    <input
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="john@example.com"
-                      className="w-full bg-slate-950 border border-slate-850 rounded px-9 py-2 text-xs focus:outline-none focus:border-blue-500 text-gray-200"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10px] text-gray-400 block mb-1">Password</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-2.5 h-3.5 w-3.5 text-gray-500" />
-                    <input
-                      type="password"
-                      required
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-slate-950 border border-slate-850 rounded px-9 py-2 text-xs focus:outline-none focus:border-blue-500 text-gray-200"
-                    />
-                  </div>
-                </div>
 
                 <div className="pt-2 flex justify-between items-center">
                   <button

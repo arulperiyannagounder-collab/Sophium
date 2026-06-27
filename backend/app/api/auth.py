@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlmodel import Session, select
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from app.core.database import get_session, init_db, engine
 from app.core.security import verify_password, get_password_hash, create_access_token, decode_token
@@ -32,14 +32,27 @@ def get_current_user(token: str = Depends(oauth2_scheme), session: Session = Dep
     return user
 
 @router.post("/signup")
-def signup(email: str, password: str, full_name: str, monthly_income: float = 0.0, session: Session = Depends(get_session)):
+def signup(
+    email: str, 
+    password: str, 
+    full_name: str, 
+    monthly_income: float = 0.0, 
+    financial_risk_tolerance: str = "Moderate",
+    session: Session = Depends(get_session)
+):
     # Check if user already exists
     existing = session.exec(select(User).where(User.email == email)).first()
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
         
     hashed = get_password_hash(password)
-    user = User(email=email, hashed_password=hashed, full_name=full_name, monthly_income=monthly_income)
+    user = User(
+        email=email, 
+        hashed_password=hashed, 
+        full_name=full_name, 
+        monthly_income=monthly_income,
+        financial_risk_tolerance=financial_risk_tolerance
+    )
     session.add(user)
     session.commit()
     session.refresh(user)

@@ -1,10 +1,12 @@
+import hashlib
+import secrets
+import hmac
 from datetime import datetime, timedelta
 from typing import Optional, Union, Any
 import jwt
-from passlib.context import CryptContext
 from app.core.config import settings
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+ITERATIONS = 100000
 
 def create_access_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     if expires_delta:
@@ -17,10 +19,35 @@ def create_access_token(subject: Union[str, Any], expires_delta: Optional[timede
     return encoded_jwt
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verifies password using PBKDF2 HMAC SHA-256 standard library comparison."""
+    try:
+        parts = hashed_password.split('$')
+        if len(parts) != 3:
+            return False
+        iterations = int(parts[0])
+        salt = parts[1]
+        hash_val = parts[2]
+        
+        calc_hash = hashlib.pbkdf2_hmac(
+            'sha256', 
+            plain_password.encode('utf-8'), 
+            salt.encode('utf-8'), 
+            iterations
+        ).hex()
+        return hmac.compare_digest(calc_hash, hash_val)
+    except Exception:
+        return False
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    """Generates standard SHA-256 PBKDF2 salt-hashed password string."""
+    salt = secrets.token_hex(16)
+    pw_hash = hashlib.pbkdf2_hmac(
+        'sha256', 
+        password.encode('utf-8'), 
+        salt.encode('utf-8'), 
+        ITERATIONS
+    ).hex()
+    return f"{ITERATIONS}${salt}${pw_hash}"
 
 def decode_token(token: str) -> Optional[str]:
     try:
