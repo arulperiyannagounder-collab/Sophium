@@ -6,6 +6,10 @@ export interface User {
   full_name: string;
   monthly_income: number;
   financial_risk_tolerance: string;
+  currency?: string;
+  risk_profile?: string;
+  country?: string;
+  timezone?: string;
 }
 
 export interface Goal {
@@ -15,6 +19,7 @@ export interface Goal {
   current_amount: number;
   target_date: string;
   category: string;
+  priority?: string;
 }
 
 export interface Transaction {
@@ -24,6 +29,10 @@ export interface Transaction {
   description: string;
   date: string;
   is_recurring: boolean;
+  type?: string;
+  payment_method?: string;
+  tags?: string;
+  notes?: string;
 }
 
 export interface TelemetryStep {
@@ -34,10 +43,19 @@ export interface TelemetryStep {
 }
 
 export interface Telemetry {
-  total_execution_time_ms: number;
-  qdrant_memory_retrievals: number;
-  qdrant_rag_hits: number;
-  trace: TelemetryStep[];
+  execution_times?: {
+    total?: number;
+    [key: string]: any;
+  };
+  steps?: {
+    agent: string;
+    thought: string;
+    tool_call?: string;
+  }[];
+  total_execution_time_ms?: number;
+  qdrant_memory_retrievals?: number;
+  qdrant_rag_hits?: number;
+  trace?: TelemetryStep[];
 }
 
 export interface ChatMessage {
@@ -65,7 +83,7 @@ interface SophiumState {
   chatHistory: ChatMessage[];
   notifications: ProactiveNotification[];
   isLoading: boolean;
-  activePanel: 'dashboard' | 'chat' | 'goals';
+  activePanel: 'home' | 'chat' | 'financials' | 'goals' | 'twin' | 'simulator' | 'memory' | 'analytics' | 'notifications' | 'settings';
   
   setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
@@ -76,7 +94,7 @@ interface SophiumState {
   addChatMessage: (msg: ChatMessage) => void;
   setNotifications: (notes: ProactiveNotification[]) => void;
   setIsLoading: (val: boolean) => void;
-  setActivePanel: (panel: 'dashboard' | 'chat' | 'goals') => void;
+  setActivePanel: (panel: 'home' | 'chat' | 'financials' | 'goals' | 'twin' | 'simulator' | 'memory' | 'analytics' | 'notifications' | 'settings') => void;
   logout: () => void;
 }
 
@@ -92,7 +110,7 @@ export const useStore = create<SophiumState>((set) => ({
   ],
   notifications: [],
   isLoading: false,
-  activePanel: 'dashboard',
+  activePanel: 'home',
   
   setUser: (user) => set({ user }),
   setToken: (token) => {
