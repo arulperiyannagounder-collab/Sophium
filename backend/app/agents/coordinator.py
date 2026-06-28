@@ -121,6 +121,49 @@ async def run_mock_pipeline(user_id: str, query: str) -> Dict[str, Any]:
         content=f"User asked: {query}. Recommendation: {recommendation}"
     )
     
+    execution_times = {
+        "coordinator": 100.0,
+        "memory": 120.0,
+        "budget": 150.0,
+        "simulation": 200.0,
+        "goal": 100.0,
+        "explanation": 80.0,
+        "total": total_time
+    }
+    
+    steps = [
+        {
+            "agent": "CoordinatorAgent",
+            "thought": "Retrieved 2 RAG financial facts from Qdrant regarding index fund historical yields and emergency cash buffers.",
+            "tool_call": "qdrant_service.search_knowledge(query)"
+        },
+        {
+            "agent": "MemoryAgent",
+            "thought": "Loaded User's 5-year housing goal from Qdrant vector memory indicating target of ₹25L and ₹5L savings.",
+            "tool_call": "qdrant_service.search_memory(user_id, query)"
+        },
+        {
+            "agent": "BudgetAgent",
+            "thought": "Evaluated active monthly cash flow surplus (₹57,000) and verified stable liquidity margins.",
+            "tool_call": "budget_agent.run(input)"
+        },
+        {
+            "agent": "SimulationAgent",
+            "thought": "Simulated ₹15,000 recurring deposit at 8.2% CAGR for 60 months, projecting ₹10.3L growth.",
+            "tool_call": "simulation_agent.run(input)"
+        },
+        {
+            "agent": "GoalAgent",
+            "thought": "Validated target completion date; shifts target forward by 6 months.",
+            "tool_call": "goal_agent.run(input)"
+        },
+        {
+            "agent": "ExplanationAgent",
+            "thought": "Compiled confidence matrix and structured advice payload for the user interface.",
+            "tool_call": "explanation_agent.run(input)"
+        }
+    ]
+    
     return {
         "response": {
             "text_recommendation": recommendation,
@@ -137,9 +180,12 @@ async def run_mock_pipeline(user_id: str, query: str) -> Dict[str, Any]:
             "total_execution_time_ms": total_time,
             "qdrant_memory_retrievals": 3,
             "qdrant_rag_hits": 2,
-            "trace": trace
+            "trace": trace,
+            "execution_times": execution_times,
+            "steps": steps
         }
     }
+
 
 async def asyncio_sleep(seconds: float):
     import asyncio
@@ -258,6 +304,46 @@ async def run_cfo_pipeline(user_id: str, query: str) -> Dict[str, Any]:
             content=f"User asked: {query}. Recommendation: {parsed_xai.get('recommendation', '')}"
         )
         
+        execution_times = {
+            "total": total_time
+        }
+        for item in trace:
+            agent_key = item["agent"].replace("Agent", "").lower()
+            execution_times[agent_key] = item["execution_time_ms"]
+            
+        steps = [
+            {
+                "agent": "CoordinatorAgent",
+                "thought": f"Retrieved {len(knowledge_docs)} financial guidelines and tax constraints from the local RAG knowledge base.",
+                "tool_call": "qdrant_service.search_knowledge(query)"
+            },
+            {
+                "agent": "MemoryAgent",
+                "thought": f"Loaded {len(memories)} long-term profile contexts and goal milestones from the vector memory store.",
+                "tool_call": "qdrant_service.search_memory(user_id, query)"
+            },
+            {
+                "agent": "BudgetAgent",
+                "thought": str(budget_res)[:200] + "...",
+                "tool_call": "budget_agent.run(input)"
+            },
+            {
+                "agent": "SimulationAgent",
+                "thought": str(sim_res)[:200] + "...",
+                "tool_call": "simulation_agent.run(input)"
+            },
+            {
+                "agent": "GoalAgent",
+                "thought": str(goal_res)[:200] + "...",
+                "tool_call": "goal_agent.run(input)"
+            },
+            {
+                "agent": "ExplanationAgent",
+                "thought": "Aggregated specialized agent insights and compiled explainability metrics.",
+                "tool_call": "explanation_agent.run(input)"
+            }
+        ]
+        
         return {
             "response": {
                 "text_recommendation": parsed_xai.get("recommendation", ""),
@@ -267,9 +353,12 @@ async def run_cfo_pipeline(user_id: str, query: str) -> Dict[str, Any]:
                 "total_execution_time_ms": total_time,
                 "qdrant_memory_retrievals": len(memories),
                 "qdrant_rag_hits": len(knowledge_docs),
-                "trace": trace
+                "trace": trace,
+                "execution_times": execution_times,
+                "steps": steps
             }
         }
+
         
     except Exception as e:
         logger.error(f"Error in ADK Pipeline: {e}. Falling back to Offline Mock.")

@@ -16,7 +16,7 @@ import { NotificationsPanel } from './components/NotificationsPanel';
 import { CustomSelect } from './components/CustomSelect';
 import { 
   Sparkles, Loader, User, Lock, Mail, ChevronRight, 
-  Eye, EyeOff, Wallet, TrendingUp 
+  Eye, EyeOff, Wallet, TrendingUp, Sun, Moon 
 } from 'lucide-react';
 
 export default function App() {
@@ -31,7 +31,9 @@ export default function App() {
     setInsights, 
     setNotifications, 
     addChatMessage,
-    setActivePanel
+    setActivePanel,
+    theme,
+    setTheme
   } = useStore();
   
   // Auth screen states
@@ -49,6 +51,42 @@ export default function App() {
   const [riskTolerance, setRiskTolerance] = useState('Moderate');
   const [preferredGoal, setPreferredGoal] = useState('House');
   const [existingSavings, setExistingSavings] = useState('');
+
+  const handleThemeToggleWithRipple = (event: React.MouseEvent<HTMLButtonElement>) => {
+    const x = event.clientX;
+    const y = event.clientY;
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    
+    if (!(document as any).startViewTransition) {
+      setTheme(newTheme);
+      return;
+    }
+    
+    const endRadius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y)
+    );
+    
+    const transition = (document as any).startViewTransition(() => {
+      setTheme(newTheme);
+    });
+    
+    transition.ready.then(() => {
+      document.documentElement.animate(
+        {
+          clipPath: [
+            `circle(0px at ${x}px ${y}px)`,
+            `circle(${endRadius}px at ${x}px ${y}px)`
+          ],
+        },
+        {
+          duration: 500,
+          easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+          pseudoElement: '::view-transition-new(root)'
+        }
+      );
+    });
+  };
 
   // Restore session on mount
   useEffect(() => {
@@ -100,8 +138,11 @@ export default function App() {
     setDemoLoading(true);
     try {
       const response = await api.post('/auth/seed');
+      console.log(response);
+      console.log(response.data);
       if (response.data.success) {
-        const { access_token, user: seededUser } = response.data.data;
+        const { access_token, user: seededUser } = response.data;
+        
         
         // Update Zustand store
         setToken(access_token);
@@ -147,12 +188,12 @@ export default function App() {
         formData.append('password', password);
 
         const res = await api.post('/auth/login', formData);
-        setToken(res.data.data.access_token);
-        setUser(res.data.data.user);
+        setToken(res.data.access_token);
+        setUser(res.data.user);
         
         addChatMessage({
           sender: 'cfo',
-          text: `Welcome back, ${res.data.data.user.full_name}! Active session restored. Ready to proceed with financial evaluations.`
+          text: `Welcome back, ${res.data.user.full_name}! Active session restored. Ready to proceed with financial evaluations.`
         });
         setActivePanel('home');
       } else {
@@ -165,8 +206,8 @@ export default function App() {
           currency: "INR",
           risk_profile: riskTolerance
         });
-        setToken(res.data.data.access_token);
-        setUser(res.data.data.user);
+        setToken(res.data.access_token);
+        setUser(res.data.user);
 
         // Add user's first custom goal if selected
         if (preferredGoal) {
@@ -267,7 +308,23 @@ export default function App() {
     <React.Fragment>
       {!user ? (
         // Unauthenticated Login / Sign Up Landing Screen
-        <div className="min-h-screen bg-[#F5F7FB] dark:bg-[#020202] text-[#1E293B] dark:text-slate-350 flex flex-col justify-center items-center p-6 transition-colors duration-300">
+        <div className="min-h-screen bg-[#F5F7FB] dark:bg-[#020202] text-[#1E293B] dark:text-slate-350 flex flex-col justify-center items-center p-6 transition-colors duration-300 relative">
+          
+          {/* Top-Right Theme Toggle button for Auth Screen */}
+          <div className="absolute top-6 right-6">
+            <button
+              onClick={handleThemeToggleWithRipple}
+              className="p-2.5 rounded-xl bg-white dark:bg-[#0a0f1d] border border-[#E2E8F0] dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-[#0F172A] dark:hover:text-white shadow-sm shadow-blue-500/5 cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center justify-center"
+              aria-label="Toggle Theme"
+            >
+              {theme === 'light' ? (
+                <Moon className="h-5 w-5" />
+              ) : (
+                <Sun className="h-5 w-5" />
+              )}
+            </button>
+          </div>
+
           <div className="w-full max-w-md space-y-6 text-center">
             
             {/* Header branding */}

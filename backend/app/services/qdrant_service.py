@@ -406,17 +406,20 @@ class QdrantService:
                 matches.append(p)
         return matches[-limit:]
 
-    def upsert_knowledge(self, category: str, content: str):
+    def upsert_knowledge(self, category: str, content: str, point_id: Optional[str] = None) -> str:
         """Saves dynamic financial RAG knowledge data."""
+        if not point_id:
+            point_id = str(uuid.uuid4())
+            
         vector = self.get_embeddings(content)
         payload = {
             "category": category,
-            "content": content
+            "content": content,
+            "id": point_id
         }
         
         if self.enabled and self.client:
             try:
-                point_id = str(uuid.uuid4())
                 self.client.upsert(
                     collection_name="sophium_knowledge",
                     points=[
@@ -427,16 +430,79 @@ class QdrantService:
                         )
                     ]
                 )
-                logger.info(f"Upserted knowledge to Qdrant: {content[:30]}...")
-                return
+                logger.info(f"Upserted knowledge to Qdrant (ID: {point_id}): {content[:30]}...")
+                return point_id
             except Exception as e:
-                logger.error(f"Qdrant knowledge upsert failed: {e}.")
+                logger.error(f"Qdrant knowledge upsert failed: {e}. Falling back.")
                 
-        self.fallback_db["sophium_knowledge"].append({
-            "id": str(uuid.uuid4()),
-            "vector": vector,
-            "payload": payload
-        })
+        # Fallback list updates
+        exists = False
+        for item in self.fallback_db["sophium_knowledge"]:
+            if item["id"] == point_id:
+                item["vector"] = vector
+                item["payload"] = payload
+                exists = True
+                break
+        if not exists:
+            self.fallback_db["sophium_knowledge"].append({
+                "id": point_id,
+                "vector": vector,
+                "payload": payload
+            })
+            
+        logger.info(f"Upserted knowledge to local fallback (ID: {point_id}): {content[:30]}...")
+        return point_id
+
+    def get_all_knowledge(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Retrieves list of knowledge chunks from Qdrant or fallback database."""
+        if self.enabled and self.client:
+            try:
+                results, _ = self.client.scroll(
+                    collection_name="sophium_knowledge",
+                    limit=limit
+                )
+                output = []
+                for r in results:
+                    p = dict(r.payload)
+                    p["id"] = r.id
+                    output.append(p)
+                return output
+            except Exception as e:
+                logger.error(f"Qdrant knowledge scroll failed: {e}. Falling back to in-memory.")
+                
+        # Fallback list
+        output = []
+        for item in self.fallback_db["sophium_knowledge"]:
+            p = dict(item["payload"])
+            p["id"] = item["id"]
+            output.append(p)
+        return output
+
+    def delete_knowledge(self, point_id: str) -> bool:
+        """Deletes a knowledge chunk from Qdrant or fallback database by ID."""
+        deleted = False
+        if self.enabled and self.client:
+            try:
+                self.client.delete(
+                    collection_name="sophium_knowledge",
+                    points_selector=[point_id]
+                )
+                logger.info(f"Deleted knowledge from Qdrant: {point_id}")
+                deleted = True
+            except Exception as e:
+                logger.error(f"Qdrant delete_knowledge failed: {e}. Checking fallback.")
+
+        # Local fallback
+        original_len = len(self.fallback_db["sophium_knowledge"])
+        self.fallback_db["sophium_knowledge"] = [
+            item for item in self.fallback_db["sophium_knowledge"] if item["id"] != point_id
+        ]
+        if len(self.fallback_db["sophium_knowledge"]) < original_len:
+            logger.info(f"Deleted knowledge from local fallback: {point_id}")
+            deleted = True
+            
+        return deleted
+
 
     def search_knowledge(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:
         """Retrieves domain financial facts (RAG)."""

@@ -42,7 +42,7 @@ export const SettingsPanel: React.FC = () => {
       });
       
       if (res.data.success) {
-        setUser(res.data.data);
+        setUser(res.data);
         setProfileSuccess(true);
         setTimeout(() => setProfileSuccess(false), 3000);
       }
@@ -60,7 +60,7 @@ export const SettingsPanel: React.FC = () => {
     try {
       const response = await api.post('/auth/seed');
       if (response.data.success) {
-        const { access_token, user: seededUser } = response.data.data;
+        const { access_token, user: seededUser } = response.data;
         
         setToken(access_token);
         setUser(seededUser);

@@ -1,5 +1,5 @@
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
 
@@ -24,6 +24,10 @@ class MemoryUpdateRequest(BaseModel):
     content: Optional[str] = None
     importance: Optional[int] = None
     metadata: Optional[Dict[str, Any]] = None
+
+class KnowledgeStoreRequest(BaseModel):
+    category: str
+    content: str
 
 # --- Routes ---
 
@@ -156,3 +160,117 @@ def delete_memory(point_id: str, current_user: User = Depends(get_current_user))
     except Exception as e:
         logger.error(f"Error deleting memory {point_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- RAG Knowledge Base Routes ---
+
+@router.get("/knowledge", response_model=StandardResponse)
+def get_rag_knowledge(
+    query: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Retrieves all dynamic RAG knowledge vectors, optionally filtered/ranked by a search query."""
+    try:
+        if query:
+            results = qdrant_service.search_knowledge(query, limit=15)
+        else:
+            results = qdrant_service.get_all_knowledge(limit=100)
+        return make_response(
+            success=True,
+            message="Knowledge base search completed",
+            data=results
+        )
+    except Exception as e:
+        logger.error(f"Error listing knowledge base: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/knowledge", response_model=StandardResponse)
+def store_rag_knowledge(
+    body: KnowledgeStoreRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """Manually registers a new dynamic RAG fact or tax rule in Qdrant."""
+    try:
+        point_id = qdrant_service.upsert_knowledge(
+            category=body.category,
+            content=body.content
+        )
+        return make_response(
+            success=True,
+            message="Knowledge successfully stored in RAG collection",
+            data={"point_id": point_id}
+        )
+    except Exception as e:
+        logger.error(f"Error storing knowledge: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/knowledge/{point_id}", response_model=StandardResponse)
+def delete_rag_knowledge(
+    point_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Deletes a dynamic knowledge chunk from Qdrant knowledge base."""
+    try:
+        deleted = qdrant_service.delete_knowledge(point_id)
+        return make_response(
+            success=True,
+            message="Knowledge chunk deleted successfully" if deleted else "Deletion failed",
+            data={"point_id": point_id, "deleted": deleted}
+        )
+    except Exception as e:
+        logger.error(f"Error deleting knowledge chunk {point_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/knowledge/upload", response_model=StandardResponse)
+async def upload_knowledge_document(
+    file: UploadFile = File(...),
+    category: str = "user_upload",
+    current_user: User = Depends(get_current_user)
+):
+    """Ingests a text/markdown document, splits it into paragraph chunks, and saves them to Qdrant knowledge base."""
+    filename = file.filename.lower() if file.filename else ""
+    if not (filename.endswith(".txt") or filename.endswith(".md") or filename.endswith(".csv")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only text (.txt), markdown (.md) or CSV (.csv) files are supported for dynamic document ingestion."
+        )
+        
+    try:
+        content_bytes = await file.read()
+        content = content_bytes.decode("utf-8", errors="ignore")
+        
+        raw_chunks = [c.strip() for c in content.split("\n\n")]
+        chunks = [c for c in raw_chunks if len(c) > 20]
+        
+        if not chunks:
+            raw_chunks = [c.strip() for c in content.split("\n")]
+            chunks = [c for c in raw_chunks if len(c) > 20]
+            
+        if not chunks:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File content is empty or contains no readable paragraphs."
+            )
+            
+        point_ids = []
+        for chunk in chunks:
+            trimmed_chunk = chunk[:2000]
+            point_id = qdrant_service.upsert_knowledge(
+                category=category,
+                content=f"Document Fact: {trimmed_chunk}"
+            )
+            point_ids.append(point_id)
+            
+        return make_response(
+            success=True,
+            message=f"Successfully ingested document '{file.filename}'. Generated {len(chunks)} knowledge base chunks.",
+            data={"point_ids": point_ids, "chunks_count": len(chunks)}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error ingesting document: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ingestion failed: {str(e)}"
+        )
+
