@@ -6,6 +6,10 @@ export interface User {
   full_name: string;
   monthly_income: number;
   financial_risk_tolerance: string;
+  currency?: string;
+  risk_profile?: string;
+  country?: string;
+  timezone?: string;
 }
 
 export interface Goal {
@@ -15,6 +19,7 @@ export interface Goal {
   current_amount: number;
   target_date: string;
   category: string;
+  priority?: string;
 }
 
 export interface Transaction {
@@ -24,6 +29,10 @@ export interface Transaction {
   description: string;
   date: string;
   is_recurring: boolean;
+  type?: string;
+  payment_method?: string;
+  tags?: string;
+  notes?: string;
 }
 
 export interface TelemetryStep {
@@ -34,10 +43,19 @@ export interface TelemetryStep {
 }
 
 export interface Telemetry {
-  total_execution_time_ms: number;
-  qdrant_memory_retrievals: number;
-  qdrant_rag_hits: number;
-  trace: TelemetryStep[];
+  execution_times?: {
+    total?: number;
+    [key: string]: any;
+  };
+  steps?: {
+    agent: string;
+    thought: string;
+    tool_call?: string;
+  }[];
+  total_execution_time_ms?: number;
+  qdrant_memory_retrievals?: number;
+  qdrant_rag_hits?: number;
+  trace?: TelemetryStep[];
 }
 
 export interface ChatMessage {
@@ -54,7 +72,6 @@ export interface ProactiveNotification {
   severity: 'warning' | 'info';
   timestamp: string;
 }
-
 interface SophiumState {
   user: User | null;
   token: string | null;
@@ -65,7 +82,8 @@ interface SophiumState {
   chatHistory: ChatMessage[];
   notifications: ProactiveNotification[];
   isLoading: boolean;
-  activePanel: 'dashboard' | 'chat' | 'goals';
+  activePanel: 'home' | 'chat' | 'financials' | 'goals' | 'twin' | 'simulator' | 'memory' | 'analytics' | 'notifications' | 'settings';
+  theme: 'light' | 'dark';
   
   setUser: (user: User | null) => void;
   setToken: (token: string | null) => void;
@@ -76,8 +94,17 @@ interface SophiumState {
   addChatMessage: (msg: ChatMessage) => void;
   setNotifications: (notes: ProactiveNotification[]) => void;
   setIsLoading: (val: boolean) => void;
-  setActivePanel: (panel: 'dashboard' | 'chat' | 'goals') => void;
+  setActivePanel: (panel: 'home' | 'chat' | 'financials' | 'goals' | 'twin' | 'simulator' | 'memory' | 'analytics' | 'notifications' | 'settings') => void;
+  setTheme: (theme: 'light' | 'dark') => void;
   logout: () => void;
+}
+
+// Bootstrap theme class on document.documentElement on first load
+const initialTheme = localStorage.getItem('theme') as 'light' | 'dark' || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+if (initialTheme === 'dark') {
+  document.documentElement.classList.add('dark');
+} else {
+  document.documentElement.classList.remove('dark');
 }
 
 export const useStore = create<SophiumState>((set) => ({
@@ -92,7 +119,8 @@ export const useStore = create<SophiumState>((set) => ({
   ],
   notifications: [],
   isLoading: false,
-  activePanel: 'dashboard',
+  activePanel: 'home',
+  theme: initialTheme,
   
   setUser: (user) => set({ user }),
   setToken: (token) => {
@@ -111,6 +139,15 @@ export const useStore = create<SophiumState>((set) => ({
   setNotifications: (notifications) => set({ notifications }),
   setIsLoading: (isLoading) => set({ isLoading }),
   setActivePanel: (activePanel) => set({ activePanel }),
+  setTheme: (theme) => {
+    localStorage.setItem('theme', theme);
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    set({ theme });
+  },
   logout: () => {
     localStorage.removeItem('token');
     set({ user: null, token: null, goals: [], transactions: [], insights: null, telemetry: null, notifications: [], chatHistory: [

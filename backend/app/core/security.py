@@ -4,10 +4,8 @@ import hmac
 from datetime import datetime, timedelta
 from typing import Optional, Union, Any
 import jwt
+import bcrypt
 from app.core.config import settings
-
-ITERATIONS = 100000
-
 def create_access_token(subject: Union[str, Any], expires_delta: Optional[timedelta] = None) -> str:
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
@@ -19,35 +17,14 @@ def create_access_token(subject: Union[str, Any], expires_delta: Optional[timede
     return encoded_jwt
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifies password using PBKDF2 HMAC SHA-256 standard library comparison."""
     try:
-        parts = hashed_password.split('$')
-        if len(parts) != 3:
-            return False
-        iterations = int(parts[0])
-        salt = parts[1]
-        hash_val = parts[2]
-        
-        calc_hash = hashlib.pbkdf2_hmac(
-            'sha256', 
-            plain_password.encode('utf-8'), 
-            salt.encode('utf-8'), 
-            iterations
-        ).hex()
-        return hmac.compare_digest(calc_hash, hash_val)
+        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
     except Exception:
         return False
 
 def get_password_hash(password: str) -> str:
-    """Generates standard SHA-256 PBKDF2 salt-hashed password string."""
-    salt = secrets.token_hex(16)
-    pw_hash = hashlib.pbkdf2_hmac(
-        'sha256', 
-        password.encode('utf-8'), 
-        salt.encode('utf-8'), 
-        ITERATIONS
-    ).hex()
-    return f"{ITERATIONS}${salt}${pw_hash}"
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 def decode_token(token: str) -> Optional[str]:
     try:

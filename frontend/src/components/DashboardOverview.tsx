@@ -2,403 +2,309 @@ import React, { useState } from 'react';
 import { useStore } from '../store/useStore';
 import api from '../services/api';
 import { 
-  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid
-} from 'recharts';
-import { 
-  Wallet, ArrowDownRight, TrendingUp, AlertCircle, Plus, 
-  Trash2, CheckCircle, Percent
+  Bot, 
+  Sparkles, 
+  ArrowRight, 
+  Activity, 
+  Calendar, 
+  Send,
+  Zap
 } from 'lucide-react';
 
-const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899'];
-
 export const DashboardOverview: React.FC = () => {
-  const { insights, transactions, notifications, user, setTransactions, setInsights } = useStore();
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [amount, setAmount] = useState('');
-  const [category, setCategory] = useState('food');
-  const [description, setDescription] = useState('');
-  const [isRecurring, setIsRecurring] = useState(false);
-  const [txLoading, setTxLoading] = useState(false);
+  const { 
+    user, 
+    insights, 
+    transactions, 
+    addChatMessage, 
+    setTelemetry, 
+    setActivePanel 
+  } = useStore();
+
+  const [homeInput, setHomeInput] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const income = user?.monthly_income || 120000;
-  const expenses = insights?.total_expenses || 0;
+  const expenses = insights?.total_expenses || 48000;
   const surplus = insights?.surplus || (income - expenses);
-  const categories = insights?.categories || {};
-  const savingsRatio = insights?.savings_ratio || 0;
-  const monthlyTrends = insights?.monthly_trends || [];
+  const savingsRatio = insights?.savings_ratio || Math.round((surplus/income) * 100);
 
-  // Formulate data for Pie Chart
-  const pieData = Object.entries(categories).map(([name, value]) => ({
-    name: name.charAt(0).toUpperCase() + name.slice(1),
-    value: Number(value)
-  })).filter(item => item.value > 0);
+  // Health score calculation
+  const healthScore = Math.min(100, Math.max(30, Math.round(
+    (savingsRatio > 35 ? 40 : 20) +
+    (expenses < (income * 0.6) ? 30 : 15) +
+    (user?.risk_profile === 'Moderate' || user?.risk_profile === 'Conservative' ? 20 : 15) +
+    (transactions.length > 0 ? 10 : 5)
+  )));
 
-  // If no transactions, use standard fallback visual data
-  const finalPieData = pieData.length > 0 ? pieData : [
-    { name: 'Rent', value: 30000 },
-    { name: 'Food', value: 12000 },
-    { name: 'Shopping', value: 10000 },
-    { name: 'Utilities', value: 8000 },
-    { name: 'Travel', value: 5000 }
-  ];
-
-  const finalTrendsData = monthlyTrends.length > 0 ? monthlyTrends : [
-    { month: 'Apr', income: income, spend: expenses ? expenses * 0.9 : 58000 },
-    { month: 'May', income: income, spend: expenses ? expenses * 0.95 : 61000 },
-    { month: 'Jun', income: income, spend: expenses || 65000 }
-  ];
-
-  const handleAddTransaction = async (e: React.FormEvent) => {
+  const handleQuickChatSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || !description) return;
+    if (!homeInput.trim() || loading) return;
+
+    const query = homeInput;
+    setHomeInput('');
+    setLoading(true);
+
+    // Add user message
+    addChatMessage({ sender: 'user', text: query });
     
-    setTxLoading(true);
-    try {
-      // POST transaction
-      await api.post('/transactions', {
-        amount: parseFloat(amount),
-        category,
-        description,
-        is_recurring: isRecurring
-      });
-
-      // Reload transactions and insights
-      const [txsRes, insightsRes] = await Promise.all([
-        api.get('/transactions'),
-        api.get('/transactions/insights')
-      ]);
-
-      setTransactions(txsRes.data);
-      setInsights(insightsRes.data);
-
-      // Reset form
-      setAmount('');
-      setDescription('');
-      setIsRecurring(false);
-      setShowAddForm(false);
-    } catch (err) {
-      console.error("Failed to add transaction:", err);
-      alert("Error adding transaction. Please try again.");
-    } finally {
-      setTxLoading(false);
-    }
-  };
-
-  const handleDeleteTransaction = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this transaction?")) return;
+    // Redirect user to the full AI advisor workspace to watch the agent execution trace
+    setActivePanel('chat');
 
     try {
-      await api.delete(`/transactions/${id}`);
+      const res = await api.post('/chat', { message: query });
+      const { response: cfoResponse, telemetry: adkTelemetry } = res.data;
       
-      // Reload
-      const [txsRes, insightsRes] = await Promise.all([
-        api.get('/transactions'),
-        api.get('/transactions/insights')
-      ]);
-
-      setTransactions(txsRes.data);
-      setInsights(insightsRes.data);
+      setTelemetry(adkTelemetry);
+      addChatMessage({
+        sender: 'cfo',
+        text: cfoResponse.text_recommendation,
+        data_payload: cfoResponse.data_payload,
+        telemetry: adkTelemetry
+      });
     } catch (err) {
-      console.error("Failed to delete transaction:", err);
+      console.error("Home chat error:", err);
+      addChatMessage({
+        sender: 'cfo',
+        text: 'Sorry, I encountered an issue analyzing your request. Verify that the server is online.'
+      });
+    } finally {
+      setLoading(false);
     }
   };
+
+  const handlePromptClick = (promptText: string) => {
+    setHomeInput(promptText);
+  };
+
+  const suggestedPrompts = [
+    "What if I buy a house?",
+    "Can I retire at 55?",
+    "Can I afford an EV?",
+    "Increase my SIP by ₹5000",
+    "How much should I save monthly?"
+  ];
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner Alert */}
-      {notifications.length > 0 && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex gap-3 items-start animate-pulse">
-          <AlertCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
-          <div>
-            <h4 className="font-semibold text-red-200 text-xs">{notifications[0].title}</h4>
-            <p className="text-red-300/80 text-[11px] mt-1 leading-relaxed">{notifications[0].message}</p>
-          </div>
+    <div className="space-y-8 pb-10">
+      
+      {/* 1. Personalized AI Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in">
+        <div>
+          <h1 className="text-3xl font-black text-[#0F172A] dark:text-white tracking-tight">
+            Good Evening, {user?.full_name?.split(' ')[0] || 'Saran'} 👋
+          </h1>
+          <p className="text-sm font-semibold text-[#7C3AED] dark:text-blue-400 mt-1 tracking-wide uppercase">
+            Your AI Personal CFO Operating System
+          </p>
         </div>
-      )}
-
-      {/* Main Grid Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Income Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 relative overflow-hidden group">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-gray-400 text-[10px] uppercase tracking-wider font-semibold">Income</p>
-              <h3 className="text-xl font-bold mt-1 text-white">₹{income.toLocaleString('en-IN')}</h3>
-            </div>
-            <div className="p-2.5 bg-blue-500/10 rounded-lg">
-              <Wallet className="h-4.5 w-4.5 text-blue-400" />
-            </div>
-          </div>
-        </div>
-
-        {/* Expenses Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 relative overflow-hidden group">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-gray-400 text-[10px] uppercase tracking-wider font-semibold">Expenditure</p>
-              <h3 className="text-xl font-bold mt-1 text-white">₹{expenses.toLocaleString('en-IN')}</h3>
-            </div>
-            <div className="p-2.5 bg-red-500/10 rounded-lg">
-              <ArrowDownRight className="h-4.5 w-4.5 text-red-400" />
-            </div>
-          </div>
-        </div>
-
-        {/* Surplus Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 relative overflow-hidden group">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-gray-400 text-[10px] uppercase tracking-wider font-semibold">Surplus</p>
-              <h3 className="text-xl font-bold mt-1 text-emerald-400">₹{surplus.toLocaleString('en-IN')}</h3>
-            </div>
-            <div className="p-2.5 bg-emerald-500/10 rounded-lg">
-              <TrendingUp className="h-4.5 w-4.5 text-emerald-400" />
-            </div>
-          </div>
-        </div>
-
-        {/* Savings Ratio Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 relative overflow-hidden group">
-          <div className="flex justify-between items-start">
-            <div>
-              <p className="text-gray-400 text-[10px] uppercase tracking-wider font-semibold">Savings Ratio</p>
-              <h3 className="text-xl font-bold mt-1 text-blue-400">{savingsRatio}%</h3>
-            </div>
-            <div className="p-2.5 bg-blue-500/10 rounded-lg">
-              <Percent className="h-4.5 w-4.5 text-blue-400" />
-            </div>
-          </div>
+        <div className="flex items-center gap-2.5 bg-white dark:bg-[#0a0f1d] border border-[#E2E8F0] dark:border-[#1f293d] px-4 py-2 rounded-2xl shadow-sm shadow-blue-500/5">
+          <Zap className="h-4.5 w-4.5 text-[#2563EB] dark:text-blue-450 animate-pulse" />
+          <span className="text-xs font-bold text-[#64748B] dark:text-slate-450">Google ADK Orchestrator Online</span>
         </div>
       </div>
 
-      {/* Main Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Pie Chart Card (Category Distribution) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 lg:col-span-2 flex flex-col h-80">
-          <h4 className="font-bold text-gray-200 text-xs mb-2">Expense Category Split</h4>
-          <div className="flex-1 min-h-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={finalPieData}
-                  cx="50%"
-                  cy="45%"
-                  innerRadius={50}
-                  outerRadius={70}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {finalPieData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#151C2C', border: '1px solid #1F293D', borderRadius: '8px' }} 
-                  itemStyle={{ color: '#F3F4F6', fontSize: '11px' }}
-                  formatter={(value) => `₹${Number(value).toLocaleString('en-IN')}`}
-                />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', bottom: 0 }} />
-              </PieChart>
-            </ResponsiveContainer>
+      {/* 2. Chat Workspace Hero Segment */}
+      <div className="bg-white dark:bg-[#0a0f1d] border border-[#E2E8F0] dark:border-[#1f293d] rounded-[24px] p-6 shadow-sm shadow-blue-500/5 glow-card relative overflow-hidden">
+        <div className="absolute right-0 top-0 h-48 w-48 bg-gradient-to-br from-[#2563EB]/5 to-[#7C3AED]/5 blur-3xl rounded-full" />
+        
+        <div className="relative z-10 space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="h-7 w-7 rounded-lg bg-gradient-to-tr from-[#2563EB] to-[#7C3AED] flex items-center justify-center">
+              <Bot className="h-4.5 w-4.5 text-white" />
+            </div>
+            <span className="text-xs font-black uppercase tracking-wider text-[#0F172A] dark:text-white">Ask Sophium</span>
           </div>
-        </div>
 
-        {/* Bar Chart Card (Monthly Trends) */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 lg:col-span-3 flex flex-col h-80">
-          <h4 className="font-bold text-gray-200 text-xs mb-2">Income vs. Spending Trends</h4>
-          <div className="flex-1 min-h-0">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={finalTrendsData}
-                margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F293D" />
-                <XAxis dataKey="month" stroke="#9CA3AF" style={{ fontSize: '10px' }} />
-                <YAxis stroke="#9CA3AF" style={{ fontSize: '10px' }} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#151C2C', border: '1px solid #1F293D', borderRadius: '8px' }}
-                  itemStyle={{ fontSize: '11px' }}
-                  formatter={(value) => `₹${Number(value).toLocaleString('en-IN')}`}
-                />
-                <Legend wrapperStyle={{ fontSize: '10px' }} />
-                <Bar dataKey="income" name="Income" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="spend" name="Spend" fill="#EF4444" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      {/* Transaction Manager & Form */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Ledger & Add Button */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 lg:col-span-3">
-          <div className="flex justify-between items-center mb-4">
-            <h4 className="font-bold text-gray-200 text-xs">Transaction Ledger</h4>
+          <form onSubmit={handleQuickChatSubmit} className="flex gap-3 bg-[#F5F7FB] dark:bg-slate-950 border border-[#E2E8F0] dark:border-slate-850 p-1.5 rounded-2xl">
+            <input 
+              type="text" 
+              placeholder="Query your CFO... (e.g. 'simulate buying a house for ₹25 Lakhs next year')"
+              value={homeInput}
+              onChange={(e) => setHomeInput(e.target.value)}
+              className="flex-1 bg-transparent px-4 py-2.5 text-xs text-[#0F172A] dark:text-slate-200 focus:outline-none placeholder-[#64748B]/60 dark:placeholder-slate-500"
+            />
             <button
-              onClick={() => setShowAddForm(!showAddForm)}
-              className="flex items-center gap-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-2.5 py-1 rounded transition-colors cursor-pointer"
+              type="submit"
+              className="px-5 bg-[#2563EB] hover:bg-[#2563EB]/90 text-white rounded-xl transition-all shadow-md shadow-blue-500/10 flex items-center justify-center gap-1.5 cursor-pointer"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Add Entry
+              <Send className="h-4 w-4" />
+              <span className="text-xs font-bold hidden sm:inline">Ask Advisor</span>
+            </button>
+          </form>
+
+          {/* Prompt Chips */}
+          <div className="flex flex-wrap gap-2 pt-1.5 items-center">
+            <span className="text-[10px] font-bold text-[#64748B] dark:text-slate-450 mr-1">Suggestions:</span>
+            {suggestedPrompts.map((p, idx) => (
+              <button
+                key={idx}
+                onClick={() => handlePromptClick(p)}
+                className="text-[10px] bg-white dark:bg-[#0a0f1d] border border-[#E2E8F0] dark:border-[#1f293d] text-[#64748B] dark:text-slate-400 hover:text-[#2563EB] dark:hover:text-blue-400 hover:border-[#2563EB]/40 dark:hover:border-blue-500/40 px-3 py-1 rounded-xl transition-all font-semibold cursor-pointer"
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+
+        </div>
+      </div>
+
+      {/* 3. Core Insights & Health Score Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in-up">
+        
+        {/* Radial Health score card */}
+        <div className="bg-white dark:bg-[#0a0f1d] border border-[#E2E8F0] dark:border-[#1f293d] rounded-[24px] p-6 flex flex-col items-center text-center justify-between shadow-sm shadow-blue-500/5 glow-card">
+          <div className="self-start">
+            <h4 className="text-xs font-black uppercase tracking-wider text-[#64748B] dark:text-slate-450">Financial Health Score</h4>
+          </div>
+
+          <div className="my-6 relative flex items-center justify-center">
+            {/* outer dial */}
+            <div className="h-32 w-32 rounded-full border-4 border-[#F1F5F9] dark:border-slate-800 flex items-center justify-center">
+              <div className="h-28 w-28 rounded-full border-4 border-t-[#2563EB] border-r-[#7C3AED] border-b-[#22C55E] border-l-[#EF4444]/20 dark:border-l-[#EF4444]/5 animate-spin-slow" />
+            </div>
+            {/* center score */}
+            <div className="absolute flex flex-col justify-center items-center">
+              <span className="text-3xl font-black text-[#0F172A] dark:text-white">{healthScore}</span>
+              <span className="text-[9px] text-[#64748B] dark:text-slate-500 font-bold uppercase tracking-wider mt-0.5">out of 100</span>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <span className="text-xs font-black text-[#22C55E] bg-[#22C55E]/10 border border-[#22C55E]/20 px-3 py-0.5 rounded-full uppercase tracking-wider">
+              {healthScore >= 80 ? 'Excellent' : healthScore >= 60 ? 'Healthy' : 'Needs Review'}
+            </span>
+          </div>
+        </div>
+
+        {/* Today's Recommendation Panel */}
+        <div className="bg-white dark:bg-[#0a0f1d] border border-[#E2E8F0] dark:border-[#1f293d] rounded-[24px] p-6 lg:col-span-2 flex flex-col justify-between shadow-sm shadow-blue-500/5 glow-card">
+          <div>
+            <h4 className="text-xs font-black uppercase tracking-wider text-[#64748B] dark:text-slate-450 mb-3 flex items-center gap-1.5">
+              <Sparkles className="h-4 w-4 text-[#7C3AED] dark:text-blue-400" />
+              Today's Key Recommendation
+            </h4>
+            <div className="space-y-3">
+              <div className="p-3 bg-[#F5F7FB] dark:bg-slate-950 border border-[#E2E8F0] dark:border-slate-850 rounded-xl flex items-start gap-3">
+                <span className="h-2 w-2 rounded-full bg-[#2563EB] mt-1.5 shrink-0" />
+                <p className="text-xs text-slate-800 dark:text-slate-100 leading-relaxed">
+                  Compounding projections suggest allocating an additional <strong className="text-[#2563EB] dark:text-blue-400">₹5,000</strong> to your Retirement Goal this month will shorten your milestone target timeline by <strong className="text-[#7C3AED] dark:text-purple-400">14 months</strong>.
+                </p>
+              </div>
+
+              <div className="p-3 bg-[#F5F7FB] dark:bg-slate-950 border border-[#E2E8F0] dark:border-slate-850 rounded-xl flex items-start gap-3">
+                <span className="h-2 w-2 rounded-full bg-[#EF4444] mt-1.5 shrink-0" />
+                <p className="text-xs text-slate-800 dark:text-slate-100 leading-relaxed">
+                  Budget warning: Shopping and discretionary expenses have increased by <strong className="text-[#EF4444] dark:text-red-400">12%</strong> over your historical baseline.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-[#E2E8F0] dark:border-[#1f293d] flex justify-end">
+            <button
+              onClick={() => setActivePanel('analytics')}
+              className="text-[10px] font-bold text-[#2563EB] dark:text-blue-400 hover:text-[#2563EB]/80 flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              Analyze Financial Patterns <ArrowRight className="h-3 w-3" />
             </button>
           </div>
-
-          {/* Add Transaction Form */}
-          {showAddForm && (
-            <form onSubmit={handleAddTransaction} className="bg-slate-950 p-4 rounded-xl border border-slate-800 mb-4 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] text-gray-400 block mb-1">Amount (₹)</label>
-                  <input
-                    type="number"
-                    required
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="e.g. 5000"
-                    className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] text-gray-400 block mb-1">Category</label>
-                  <select
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="food">Food</option>
-                    <option value="rent">Rent</option>
-                    <option value="shopping">Shopping</option>
-                    <option value="utilities">Utilities</option>
-                    <option value="travel">Travel</option>
-                    <option value="investment">Investment / SIP</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] text-gray-400 block mb-1">Description</label>
-                <input
-                  type="text"
-                  required
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="e.g. Weekly organic groceries"
-                  className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="is_recurring"
-                  checked={isRecurring}
-                  onChange={(e) => setIsRecurring(e.target.checked)}
-                  className="rounded text-blue-600 focus:ring-0"
-                />
-                <label htmlFor="is_recurring" className="text-[10px] text-gray-400 cursor-pointer">
-                  Is recurring monthly expense
-                </label>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setShowAddForm(false)}
-                  className="px-2.5 py-1 text-xs text-gray-400 hover:text-gray-200 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={txLoading}
-                  className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-1 rounded disabled:opacity-50 cursor-pointer"
-                >
-                  {txLoading ? 'Adding...' : 'Save Entry'}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* Transactions List */}
-          <div className="space-y-2 overflow-y-auto max-h-56 pr-1">
-            {transactions.length === 0 ? (
-              <div className="text-gray-500 text-center py-12 text-xs">
-                No transactions recorded. Click "Launch 2-Min Demo Mode" above.
-              </div>
-            ) : (
-              transactions.map((tx) => (
-                <div key={tx.id} className="flex justify-between items-center p-3 bg-slate-950 rounded-lg border border-slate-850 hover:border-slate-800 group transition-all">
-                  <div>
-                    <h5 className="font-semibold text-gray-200 text-xs">{tx.description}</h5>
-                    <div className="flex gap-2 items-center mt-1">
-                      <span className="text-[9px] text-gray-500 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
-                        {tx.category.toUpperCase()}
-                      </span>
-                      {tx.is_recurring && (
-                        <span className="text-[8px] text-blue-400 font-bold bg-blue-500/10 px-1 py-0.5 rounded">
-                          RECURRING
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <span className={`font-semibold text-xs ${tx.category === 'investment' ? 'text-emerald-400' : 'text-gray-300'}`}>
-                        {tx.category === 'investment' ? '+' : '-'} ₹{tx.amount.toLocaleString('en-IN')}
-                      </span>
-                      <p className="text-[9px] text-gray-600 mt-0.5">
-                        {new Date(tx.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handleDeleteTransaction(tx.id)}
-                      className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
-                      title="Delete Entry"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
         </div>
 
-        {/* Proactive Coaching Notification Feed */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 lg:col-span-2 flex flex-col h-[340px]">
-          <h4 className="font-bold text-gray-200 text-xs mb-3">Proactive Coach Alerts</h4>
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-            {notifications.length === 0 ? (
-              <div className="text-gray-500 text-center py-16 text-xs flex flex-col items-center justify-center gap-2">
-                <CheckCircle className="h-6 w-6 text-emerald-500/70" />
-                No budget alerts. You are completely on track!
-              </div>
-            ) : (
-              notifications.map((note) => (
-                <div 
-                  key={note.id} 
-                  className={`p-3 rounded-lg border text-[11px] leading-relaxed ${
-                    note.severity === 'warning' 
-                      ? 'bg-red-500/5 border-red-500/20 text-red-300' 
-                      : 'bg-blue-500/5 border-blue-500/20 text-blue-300'
-                  }`}
-                >
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="font-bold">{note.title}</span>
-                    <span className="text-[9px] opacity-60">
-                      {new Date(note.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                  <p className="opacity-80">{note.message}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
       </div>
+
+      {/* 4. Events & Telemetry Split */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        
+        {/* Upcoming events list */}
+        <div className="bg-white dark:bg-[#0a0f1d] border border-[#E2E8F0] dark:border-[#1f293d] rounded-[24px] p-6 lg:col-span-2 shadow-sm shadow-blue-500/5 glow-card">
+          <h4 className="text-xs font-black uppercase tracking-wider text-[#64748B] dark:text-slate-450 mb-4 flex items-center gap-1.5">
+            <Calendar className="h-4.5 w-4.5 text-[#2563EB] dark:text-blue-400" />
+            Upcoming Financial Events
+          </h4>
+          <div className="space-y-3.5">
+            
+            <div className="flex items-center justify-between text-xs pb-1.5 border-b border-slate-50 dark:border-slate-850/30">
+              <div className="flex items-center gap-2">
+                <div className="h-2.5 w-2.5 rounded-full bg-[#EF4444]" />
+                <span className="font-bold text-[#0F172A] dark:text-slate-205">Credit Card Bill Payment</span>
+              </div>
+              <span className="text-[10px] text-[#64748B] dark:text-slate-450 font-mono">July 3</span>
+            </div>
+
+            <div className="flex items-center justify-between text-xs pb-1.5 border-b border-slate-50 dark:border-slate-850/30">
+              <div className="flex items-center gap-2">
+                <div className="h-2.5 w-2.5 rounded-full bg-[#2563EB] dark:bg-blue-500" />
+                <span className="font-bold text-[#0F172A] dark:text-slate-205">Mutual Fund SIP Debit</span>
+              </div>
+              <span className="text-[10px] text-[#64748B] dark:text-slate-450 font-mono">July 10</span>
+            </div>
+
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <div className="h-2.5 w-2.5 rounded-full bg-[#22C55E]" />
+                <span className="font-bold text-[#0F172A] dark:text-slate-205">Projected Salary Credit</span>
+              </div>
+              <span className="text-[10px] text-[#64748B] dark:text-slate-450 font-mono">July 30</span>
+            </div>
+
+          </div>
+        </div>
+
+        {/* Recent Agent Activity timeline preview */}
+        <div className="bg-white dark:bg-[#0a0f1d] border border-[#E2E8F0] dark:border-[#1f293d] rounded-[24px] p-6 lg:col-span-3 shadow-sm shadow-blue-500/5 glow-card">
+          <h4 className="text-xs font-black uppercase tracking-wider text-[#64748B] dark:text-slate-450 mb-4 flex items-center gap-1.5">
+            <Activity className="h-4.5 w-4.5 text-[#7C3AED] dark:text-blue-400" />
+            Recent Agent Activity Logs
+          </h4>
+          
+          <div className="space-y-3.5 text-xs text-[#0F172A]">
+            
+            <div className="flex items-start gap-2.5 pb-2.5 border-b border-[#F1F5F9] dark:border-slate-850">
+              <div className="h-5 w-5 rounded bg-[#2563EB]/10 flex items-center justify-center font-bold text-[#2563EB] text-[10px] shrink-0">
+                CO
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-center mb-0.5">
+                  <span className="font-extrabold text-[#0F172A] dark:text-white">Coordinator Agent</span>
+                  <span className="text-[9px] text-[#64748B] dark:text-slate-500 font-mono">24 ms</span>
+                </div>
+                <p className="text-[10px] text-[#64748B] dark:text-slate-450 leading-relaxed">Orchestrated downstream memory lookups for discretionary spending analysis.</p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2.5 pb-2.5 border-b border-[#F1F5F9] dark:border-slate-850">
+              <div className="h-5 w-5 rounded bg-[#8B5CF6]/10 flex items-center justify-center font-bold text-[#8B5CF6] text-[10px] shrink-0">
+                ME
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-center mb-0.5">
+                  <span className="font-extrabold text-[#0F172A] dark:text-white">Memory Agent</span>
+                  <span className="text-[9px] text-[#64748B] dark:text-slate-500 font-mono">48 ms</span>
+                </div>
+                <p className="text-[10px] text-[#64748B] dark:text-slate-450 leading-relaxed">Retrieved Pune housing milestone coordinates from Qdrant vector-space.</p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2.5">
+              <div className="h-5 w-5 rounded bg-[#22C55E]/10 flex items-center justify-center font-bold text-[#22C55E] text-[10px] shrink-0">
+                SI
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex justify-between items-center mb-0.5">
+                  <span className="font-extrabold text-[#0F172A] dark:text-white">Simulation Agent</span>
+                  <span className="text-[9px] text-[#64748B] dark:text-slate-500 font-mono">112 ms</span>
+                </div>
+                <p className="text-[10px] text-[#64748B] dark:text-slate-450 leading-relaxed">Projected 15-year compound yields relative to 6% expected inflation indices.</p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
     </div>
   );
 };

@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 
 from app.core.config import settings
 from app.core.database import init_db
-from app.api import auth, chat, goals, transactions
+from app.api import auth, chat, goals, transactions, financials, memory
 from app.services.scheduler_service import scheduler
 
 logging.basicConfig(level=logging.INFO)
@@ -37,7 +37,12 @@ app = FastAPI(
 # CORS Policy configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # For hackathon accessibility
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,6 +53,8 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(goals.router, prefix="/api")
 app.include_router(transactions.router, prefix="/api")
+app.include_router(financials.router, prefix="/api")
+app.include_router(memory.router, prefix="/api")
 
 @app.get("/")
 def read_root():
