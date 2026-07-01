@@ -2,14 +2,25 @@ import os
 from sqlmodel import SQLModel, create_engine, Session, select
 from app.core.config import settings
 
+db_url = settings.DATABASE_URL
+if db_url:
+    db_url = db_url.strip()
+    if db_url.startswith('"') or db_url.startswith("'"):
+        db_url = db_url.strip('"').strip("'").strip()
+
+if not db_url:
+    db_url = "sqlite:///./sophium.db"
+elif db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
 engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+    db_url,
+    connect_args={"check_same_thread": False} if "sqlite" in db_url else {}
 )
 
 def init_db():
-    if "sqlite" in settings.DATABASE_URL:
-        db_path = settings.DATABASE_URL.replace("sqlite:///", "")
+    if "sqlite" in db_url:
+        db_path = db_url.replace("sqlite:///", "")
         # Remove leading dot-slash if present
         if db_path.startswith("./"):
             db_path = db_path[2:]
